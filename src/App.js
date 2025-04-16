@@ -181,34 +181,46 @@ const UserPose = () => {
     }
 
     useEffect(() => {
-        const userPose = new Pose({
+        const pose = new Pose({
             locateFile: (file) =>
                 `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
         });
 
-        userPose.setOptions({
-            selfieMode: true,
+        pose.setOptions({
             modelComplexity: 1,
+            selfieMode: true,
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5,
         });
 
-        userPose.onResults(onResults);
+        pose.onResults(onResults);
 
-        let isRunning = true;
+        let isActive = true;
 
         const detectFrame = async () => {
             const video = webcamRef.current?.video;
-            if (isRunning && video && video.readyState >= 3) {
-                await userPose.send({ image: video });
-                requestAnimationFrame(detectFrame); // 프레임마다 다시 호출
+
+            if (
+                isActive &&
+                video &&
+                video.readyState >= 3 // HAVE_FUTURE_DATA
+            ) {
+                try {
+                    await pose.send({ image: video });
+                } catch (e) {
+                    console.error("🔥 pose.send 실패:", e);
+                }
             }
+
+            if (isActive) requestAnimationFrame(detectFrame);
         };
 
-        requestAnimationFrame(detectFrame); // 첫 프레임 시작
+        // ✅ 최초 1회 호출
+        requestAnimationFrame(detectFrame);
 
         return () => {
-            isRunning = false;
+            isActive = false;
+            pose.close();
         };
     }, []);
 
