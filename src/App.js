@@ -181,6 +181,8 @@ const UserPose = () => {
     }
 
     useEffect(() => {
+        console.log("🟢 useEffect triggered: MediaPipe init");
+
         const userPose = new Pose({
             locateFile: (file) =>
                 `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
@@ -198,7 +200,8 @@ const UserPose = () => {
         const interval = setInterval(() => {
             const videoEl = webcamRef.current?.video;
             if (videoEl && videoEl.readyState >= 3) {
-                // 3 = HAVE_FUTURE_DATA
+                console.log("📷 video ready, starting camera");
+
                 camera = new cam.Camera(videoEl, {
                     onFrame: async () => {
                         await userPose.send({ image: videoEl });
@@ -207,7 +210,7 @@ const UserPose = () => {
                     height: 720,
                 });
                 camera.start();
-                clearInterval(interval); // 한 번만 실행되도록
+                clearInterval(interval);
             }
         }, 300);
 
