@@ -21,10 +21,39 @@ const UserPose = () => {
 
     const currentPoseRef = useRef("");
     const poseStartTimeRef = useRef(Date.now());
-    const poseDurationRef = useRef({ 정자세: 0, 기울어짐: 0, 엎드림: 0, 자리비움: 0 });
+    const poseDurationRef = useRef({
+        정자세: 0,
+        기울어짐: 0,
+        엎드림: 0,
+        자리비움: 0,
+    });
 
     const checkLeaveRef = useRef(false);
     const leaveTimeoutRef = useRef(null);
+
+    // expo 프로젝트에서 측정 종료 신호 받는 이벤트 리스너
+    // ios
+    window.addEventListener("message", (e) => {
+        // 전달받은 데이터가 측정 종료일 경우 실행
+        if (e.data === "측정 종료") endDetect();
+    });
+    // android
+    document.addEventListener("message", (e) => {
+        // 전달받은 데이터가 측정 종료일 경우 실행
+        if (e.data === "측정 종료") endDetect();
+    });
+
+    // 측정 종료 시 호출되는 함수
+    // 이 프로젝트에서는 측정 종료를 할 수 없음 -> 그 기능이 없어
+    // 측정 종료 기능은 웹뷰띄우는 프로젝트에 있다
+    // 그럼 어떻게 하느냐
+    // expo 프로젝트에서 측정 종료 버튼 누르면 리액트 프로젝트(Pose)로 신호를 준다
+    // 리액트 프로젝트에선 신호를 받으면 밑에 함수를 실행하도록 한다
+    const endDetect = () => {
+        // 현재 시간 데이터를 담아놓은 변수(state)가 있다 -> poseDurations
+        // poseDurations <- 얘를 웹뷰한테 전해주면 됨
+        window.ReactNativeWebview.postMessage(JSON.parse(poseDurations));
+    };
 
     const updatePoseTime = (pose) => {
         const now = Date.now();
@@ -88,13 +117,35 @@ const UserPose = () => {
             canvasElement.height = webcamRef.current.video.videoHeight;
 
             canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.clearRect(
+                0,
+                0,
+                canvasElement.width,
+                canvasElement.height
+            );
+            canvasCtx.drawImage(
+                results.image,
+                0,
+                0,
+                canvasElement.width,
+                canvasElement.height
+            );
 
-            drawConnectors(canvasCtx, results.poseLandmarks, [[0, 1], [1, 2], [0, 4], [4, 5], [11, 12]], {
-                color: "#00FF00",
-                lineWidth: 2,
-            });
+            drawConnectors(
+                canvasCtx,
+                results.poseLandmarks,
+                [
+                    [0, 1],
+                    [1, 2],
+                    [0, 4],
+                    [4, 5],
+                    [11, 12],
+                ],
+                {
+                    color: "#00FF00",
+                    lineWidth: 2,
+                }
+            );
 
             drawLandmarks(canvasCtx, results.poseLandmarks, {
                 color: "red",
@@ -131,7 +182,8 @@ const UserPose = () => {
 
     useEffect(() => {
         const userPose = new Pose({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+            locateFile: (file) =>
+                `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
         });
 
         userPose.setOptions({
@@ -143,16 +195,21 @@ const UserPose = () => {
 
         userPose.onResults(onResults);
 
-        if (webcamRef.current && webcamRef.current.video) {
-            camera = new cam.Camera(webcamRef.current.video, {
-                onFrame: async () => {
-                    await userPose.send({ image: webcamRef.current.video });
-                },
-                width: 1280,
-                height: 720,
-            });
-            camera.start();
-        }
+        const interval = setInterval(() => {
+            const videoEl = webcamRef.current?.video;
+            if (videoEl && videoEl.readyState >= 3) {
+                // 3 = HAVE_FUTURE_DATA
+                camera = new cam.Camera(videoEl, {
+                    onFrame: async () => {
+                        await userPose.send({ image: videoEl });
+                    },
+                    width: 1280,
+                    height: 720,
+                });
+                camera.start();
+                clearInterval(interval); // 한 번만 실행되도록
+            }
+        }, 300);
 
         return () => {
             if (camera) {
@@ -163,15 +220,47 @@ const UserPose = () => {
 
     return (
         <div className="App">
-            <div style={{ position: "absolute", top: "10px", left: "10px", color: "red", fontSize: "20px", fontWeight: "bold", zIndex: 10 }}>
+            <div
+                style={{
+                    position: "absolute",
+                    top: "10px",
+                    left: "10px",
+                    color: "red",
+                    fontSize: "20px",
+                    fontWeight: "bold",
+                    zIndex: 10,
+                }}
+            >
                 <p>자세: {poseText}</p>
                 <p>정자세: {poseDurations.정자세.toFixed(1)}초</p>
                 <p>기울어짐: {poseDurations.기울어짐.toFixed(1)}초</p>
                 <p>엎드림: {poseDurations.엎드림.toFixed(1)}초</p>
                 <p>자리비움: {poseDurations.자리비움.toFixed(1)}초</p>
             </div>
-            <Webcam ref={webcamRef} style={{ position: "absolute", left: 0, right: 0, textAlign: "center", zIndex: 9, width: "100%", height: "100%" }} />
-            <canvas ref={canvasRef} style={{ position: "absolute", left: 0, right: 0, textAlign: "center", zIndex: 9, width: "100%", height: "100%" }}></canvas>
+            <Webcam
+                ref={webcamRef}
+                style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    textAlign: "center",
+                    zIndex: 9,
+                    width: "100%",
+                    height: "100%",
+                }}
+            />
+            <canvas
+                ref={canvasRef}
+                style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    textAlign: "center",
+                    zIndex: 9,
+                    width: "100%",
+                    height: "100%",
+                }}
+            ></canvas>
         </div>
     );
 };
