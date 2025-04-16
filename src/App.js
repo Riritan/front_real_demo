@@ -195,31 +195,15 @@ const UserPose = () => {
 
         userPose.onResults(onResults);
 
-        let checkInterval = setInterval(() => {
-            const videoEl = webcamRef.current?.video;
-            if (videoEl && videoEl.readyState >= 3) {
-                console.log("✅ Video ready, starting MediaPipe camera");
-
-                camera = new cam.Camera(videoEl, {
-                    onFrame: async () => {
-                        await userPose.send({ image: videoEl });
-                    },
-                    width: 1280,
-                    height: 720,
-                });
-
-                camera.start();
-                clearInterval(checkInterval);
-            } else {
-                console.log("⏳ Waiting for video element to be ready...");
+        const interval = setInterval(() => {
+            const video = webcamRef.current?.video;
+            if (video && video.readyState >= 3) {
+                userPose.send({ image: video });
             }
-        }, 300);
+        }, 100); // 10fps
 
         return () => {
-            if (camera) {
-                camera.stop();
-            }
-            clearInterval(checkInterval);
+            clearInterval(interval);
         };
     }, []);
 
