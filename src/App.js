@@ -181,8 +181,6 @@ const UserPose = () => {
     }
 
     useEffect(() => {
-        console.log("🟢 useEffect triggered: MediaPipe init");
-
         const userPose = new Pose({
             locateFile: (file) =>
                 `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
@@ -197,10 +195,10 @@ const UserPose = () => {
 
         userPose.onResults(onResults);
 
-        const interval = setInterval(() => {
+        let checkInterval = setInterval(() => {
             const videoEl = webcamRef.current?.video;
             if (videoEl && videoEl.readyState >= 3) {
-                console.log("📷 video ready, starting camera");
+                console.log("✅ Video ready, starting MediaPipe camera");
 
                 camera = new cam.Camera(videoEl, {
                     onFrame: async () => {
@@ -209,8 +207,11 @@ const UserPose = () => {
                     width: 1280,
                     height: 720,
                 });
+
                 camera.start();
-                clearInterval(interval);
+                clearInterval(checkInterval);
+            } else {
+                console.log("⏳ Waiting for video element to be ready...");
             }
         }, 300);
 
@@ -218,6 +219,7 @@ const UserPose = () => {
             if (camera) {
                 camera.stop();
             }
+            clearInterval(checkInterval);
         };
     }, []);
 
