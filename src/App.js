@@ -195,15 +195,20 @@ const UserPose = () => {
 
         userPose.onResults(onResults);
 
-        const interval = setInterval(() => {
+        let isRunning = true;
+
+        const detectFrame = async () => {
             const video = webcamRef.current?.video;
-            if (video && video.readyState >= 3) {
-                userPose.send({ image: video });
+            if (isRunning && video && video.readyState >= 3) {
+                await userPose.send({ image: video });
+                requestAnimationFrame(detectFrame); // 프레임마다 다시 호출
             }
-        }, 100); // 10fps
+        };
+
+        requestAnimationFrame(detectFrame); // 첫 프레임 시작
 
         return () => {
-            clearInterval(interval);
+            isRunning = false;
         };
     }, []);
 
