@@ -13,11 +13,13 @@ const UserPose = () => {
         자리비움: 0,
     });
 
+    const [showAlert, setShowAlert] = useState(false); // ✅ 추가됨
+
     const webcamRef = useRef(null);
     const canvasRef = useRef(null);
     let camera = null;
 
-    const LEAVE_TIME_SEC = 5; // 자리 비움 설정 시간 (초)
+    const LEAVE_TIME_SEC = 5;
 
     const currentPoseRef = useRef("");
     const poseStartTimeRef = useRef(Date.now());
@@ -31,45 +33,51 @@ const UserPose = () => {
     const checkLeaveRef = useRef(false);
     const leaveTimeoutRef = useRef(null);
 
-    // expo 프로젝트에서 측정 종료 신호 받는 이벤트 리스너
-    // ios
     window.addEventListener("message", (e) => {
-        // 전달받은 데이터가 측정 종료일 경우 실행
-        if (e.data === "측정 종료") endDetect();
-    });
-    // android
-    document.addEventListener("message", (e) => {
-        // 전달받은 데이터가 측정 종료일 경우 실행
         if (e.data === "측정 종료") endDetect();
     });
 
-    // 측정 종료 시 호출되는 함수
-    // 이 프로젝트에서는 측정 종료를 할 수 없음 -> 그 기능이 없어
-    // 측정 종료 기능은 웹뷰띄우는 프로젝트에 있다
-    // 그럼 어떻게 하느냐
-    // expo 프로젝트에서 측정 종료 버튼 누르면 리액트 프로젝트(Pose)로 신호를 준다
-    // 리액트 프로젝트에선 신호를 받으면 밑에 함수를 실행하도록 한다
+    document.addEventListener("message", (e) => {
+        if (e.data === "측정 종료") endDetect();
+    });
+
     const endDetect = () => {
-        // 현재 시간 데이터를 담아놓은 변수(state)가 있다 -> poseDurations
-        // poseDurations <- 얘를 웹뷰한테 전해주면 됨
         window.ReactNativeWebview.postMessage(JSON.parse(poseDurations));
     };
 
     const updatePoseTime = (pose) => {
         const now = Date.now();
-        const elapsedTime = (now - poseStartTimeRef.current) / 1000; // 초 단위
+        const elapsedTime = (now - poseStartTimeRef.current) / 1000;
 
-        // 기존 자세의 시간 누적
         if (currentPoseRef.current) {
             poseDurationRef.current[currentPoseRef.current] += elapsedTime;
         }
 
-        // 새로운 자세 시작
         poseStartTimeRef.current = now;
         currentPoseRef.current = pose;
-
-        // 상태 업데이트
         setPoseDurations({ ...poseDurationRef.current });
+
+        // 수정: Web -> RN 메시지 전송 코드 추가
+        if (pose !== "정자세") {
+            const duration = poseDurationRef.current[pose];
+            if (duration >= 10) {
+                setShowAlert(true);
+        
+                // ✅ React Native 앱으로 메시지 전송
+                window.ReactNativeWebView?.postMessage(JSON.stringify({
+                    type: "BAD_POSTURE_WARNING",
+                    pose: pose,
+                    duration: duration,
+                    message: "10초 이상 올바르지 않은 자세입니다! 바른 자세로 돌아가세요!"
+                }));
+            } else {
+                setShowAlert(false);
+            }
+        } else {
+            setShowAlert(false);
+        }
+        
+        
     };
 
     const poseDetect = (landmarks) => {
@@ -97,7 +105,6 @@ const UserPose = () => {
             status = "엎드림";
         }
 
-        // 자세가 변경된 경우, 시간 측정 업데이트
         if (currentPoseRef.current !== status) {
             updatePoseTime(status);
         }
@@ -141,12 +148,8 @@ const UserPose = () => {
                     [4, 5],
                     [11, 12],
                 ],
-                {
-                    color: "#00FF00",
-                    lineWidth: 2,
-                }
+                { color: "#00FF00", lineWidth: 2 }
             );
-
             drawLandmarks(canvasCtx, results.poseLandmarks, {
                 color: "red",
                 lineWidth: 2,
@@ -200,11 +203,7 @@ const UserPose = () => {
         const detectFrame = async () => {
             const video = webcamRef.current?.video;
 
-            if (
-                isActive &&
-                video &&
-                video.readyState >= 3 // HAVE_FUTURE_DATA
-            ) {
+            if (isActive && video && video.readyState >= 3) {
                 try {
                     await pose.send({ image: video });
                 } catch (e) {
@@ -215,7 +214,6 @@ const UserPose = () => {
             if (isActive) requestAnimationFrame(detectFrame);
         };
 
-        // ✅ 최초 1회 호출
         requestAnimationFrame(detectFrame);
 
         return () => {
@@ -238,6 +236,19 @@ const UserPose = () => {
                 }}
             >
                 <p>자세: {poseText}</p>
+                {/* ✅ 추가됨: 경고 메시지 */}
+                {showAlert && (
+                    <p
+                        style={{
+                            color: "red",
+                            fontSize: "18px",
+                            marginTop: "4px",
+                        }}
+                    >
+                        ⚠️ 20초 이상 올바르지 않은 자세입니다! 바른 자세로
+                        돌아가세요!
+                    </p>
+                )}
                 <p>정자세: {poseDurations.정자세.toFixed(1)}초</p>
                 <p>기울어짐: {poseDurations.기울어짐.toFixed(1)}초</p>
                 <p>엎드림: {poseDurations.엎드림.toFixed(1)}초</p>
