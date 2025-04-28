@@ -14,14 +14,11 @@ const UserPose = () => {
     });
 
     const [showAlert, setShowAlert] = useState(false);
+    const [alertMessage, setAlertMessage] = useState("");
 
     const webcamRef = useRef(null);
     const canvasRef = useRef(null);
-    let camera = null;
 
-    const LEAVE_TIME_SEC = 5;
-
-    const currentPoseRef = useRef("");
     const poseStartTimeRef = useRef(Date.now());
     const poseDurationRef = useRef({
         정자세: 0,
@@ -30,10 +27,14 @@ const UserPose = () => {
         자리비움: 0,
     });
 
-    const continuousTiltedTimeRef = useRef(0); // ⭐ 연속 기울어진 시간 관리용
+    const lastPostureRef = useRef("");              // ⭐ 마지막 자세
+    const lastUpdateTimeRef = useRef(Date.now());   // ⭐ 마지막 자세 변경 시간
+    const continuousBadPostureTimeRef = useRef(0);  // ⭐ 연속 나쁜 자세 시간
 
     const checkLeaveRef = useRef(false);
     const leaveTimeoutRef = useRef(null);
+
+    const LEAVE_TIME_SEC = 5;
 
     window.addEventListener("message", (e) => {
         if (e.data === "측정 종료") endDetect();
@@ -44,84 +45,89 @@ const UserPose = () => {
     });
 
     const endDetect = () => {
-        window.ReactNativeWebView?.postMessage(JSON.parse(poseDurations));
+        window.ReactNativeWebView?.postMessage(JSON.stringify(poseDurationRef.current));
     };
 
-    const updatePoseTime = (pose) => {
+    const updatePoseTime = (newPose) => {
         const now = Date.now();
-        const elapsedTime = (now - poseStartTimeRef.current) / 1000;
-    
-        poseDurationRef.current[pose] += elapsedTime;
-    
-        poseStartTimeRef.current = now;
-        currentPoseRef.current = pose;
+        const elapsedTime = (now - lastUpdateTimeRef.current) / 1000;
+
+        if (lastPostureRef.current) {
+            poseDurationRef.current[lastPostureRef.current] += elapsedTime;
+        }
+
+        lastPostureRef.current = newPose;
+        lastUpdateTimeRef.current = now;
         setPoseDurations({ ...poseDurationRef.current });
     };
-    
 
     const poseDetect = (landmarks) => {
         const LEFT_SHOULDER = landmarks[POSE_LANDMARKS.LEFT_SHOULDER];
         const RIGHT_SHOULDER = landmarks[POSE_LANDMARKS.RIGHT_SHOULDER];
         const NOSE = landmarks[POSE_LANDMARKS.NOSE];
-    
+
         const leftShoulder = { x: LEFT_SHOULDER.x, y: LEFT_SHOULDER.y };
         const rightShoulder = { x: RIGHT_SHOULDER.x, y: RIGHT_SHOULDER.y };
         const nose = { x: NOSE.x, y: NOSE.y };
-    
+
         const shoulderSlope = Math.abs(leftShoulder.y - rightShoulder.y);
         const shoulderCenter = {
             x: (leftShoulder.x + rightShoulder.x) / 2,
             y: (leftShoulder.y + rightShoulder.y) / 2,
         };
         const headPosition = nose.y - shoulderCenter.y;
-    
+
         let status = "";
-        if (shoulderSlope < 0.05) {
-            if (headPosition < -0.15) {  // 머리가 어깨보다 확 내려가 있으면 엎드림
-                status = "엎드림";
-            } else if (headPosition >= -0.15 && headPosition <= 0.1) {
-                status = "정자세";
-            } else {
-                status = "기울어짐"; // 이상치 방어
-            }
-        } else {
+        if (shoulderSlope < 0.05 && -0.05 < headPosition && headPosition < 0.1) {
+            status = "엎드림";
+        } else if (shoulderSlope >= 0.05) {
             status = "기울어짐";
+        } else {
+            status = "정자세";
         }
-        
-    
+
         const now = Date.now();
         const elapsed = (now - poseStartTimeRef.current) / 1000;
-    
-        // ⭐ 수정된 부분
-        if (status === "기울어짐" || status === "엎드림") {
-            continuousTiltedTimeRef.current += elapsed;
-        } else {
-            continuousTiltedTimeRef.current = 0; // 정자세 또는 자리비움이면 초기화
+
+        // ⭐ 자세별 누적 시간 업데이트
+        if (lastPostureRef.current !== status) {
+            updatePoseTime(status);
         }
-    
-        poseStartTimeRef.current = now; // 마지막 자세 변경 시간 갱신
-    
-        if (continuousTiltedTimeRef.current >= 20) {
+
+        // ⭐ 연속 기울어짐/엎드림 시간 관리
+        if (status === "기울어짐" || status === "엎드림") {
+            continuousBadPostureTimeRef.current += elapsed;
+        } else {
+            continuousBadPostureTimeRef.current = 0;
+        }
+
+        poseStartTimeRef.current = now;
+
+        // ⭐ 연속 나쁜자세 20초 넘으면 경고
+        if (continuousBadPostureTimeRef.current >= 20) {
             if (!showAlert) {
                 setShowAlert(true);
+
+                if (status === "엎드림") {
+                    setAlertMessage("20초 이상 연속으로 엎드린 자세입니다! 허리를 곧게 펴세요!");
+                } else if (status === "기울어짐") {
+                    setAlertMessage("20초 이상 연속으로 기울어진 자세입니다! 바른 자세로 돌아가세요!");
+                }
+
                 window.ReactNativeWebView?.postMessage(JSON.stringify({
                     type: "BAD_POSTURE_WARNING",
                     pose: status,
-                    duration: continuousTiltedTimeRef.current,
-                    message: "20초 이상 연속으로 잘못된 자세입니다! 바른 자세로 돌아가세요!"
+                    duration: continuousBadPostureTimeRef.current,
+                    message: alertMessage,
                 }));
             }
         } else {
             setShowAlert(false);
         }
-    
-        if (currentPoseRef.current !== status) {
-            updatePoseTime(status);
-        }
-    
+
         setPoseText(status);
         return { status };
-    };    
+    };
 
     function onResults(results) {
         try {
@@ -137,19 +143,8 @@ const UserPose = () => {
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-            drawConnectors(
-                canvasCtx,
-                results.poseLandmarks,
-                [
-                    [0, 1], [1, 2], [0, 4], [4, 5], [11, 12],
-                ],
-                { color: "#00FF00", lineWidth: 2 }
-            );
-            drawLandmarks(canvasCtx, results.poseLandmarks, {
-                color: "red",
-                lineWidth: 2,
-                radius: 3,
-            });
+            drawConnectors(canvasCtx, results.poseLandmarks, [[0, 1], [1, 2], [0, 4], [4, 5], [11, 12]], { color: "#00FF00", lineWidth: 2 });
+            drawLandmarks(canvasCtx, results.poseLandmarks, { color: "red", lineWidth: 2, radius: 3 });
 
             const { status } = poseDetect(results.poseLandmarks);
 
@@ -218,27 +213,11 @@ const UserPose = () => {
 
     return (
         <div className="App">
-            <div
-                style={{
-                    position: "absolute",
-                    top: "10px",
-                    left: "10px",
-                    color: "red",
-                    fontSize: "20px",
-                    fontWeight: "bold",
-                    zIndex: 10,
-                }}
-            >
+            <div style={{ position: "absolute", top: "10px", left: "10px", color: "red", fontSize: "20px", fontWeight: "bold", zIndex: 10 }}>
                 <p>자세: {poseText}</p>
                 {showAlert && (
-                    <p
-                        style={{
-                            color: "red",
-                            fontSize: "18px",
-                            marginTop: "4px",
-                        }}
-                    >
-                        ⚠️ 20초 이상 연속으로 기울어진 자세입니다! 바른 자세로 돌아가세요!
+                    <p style={{ color: "red", fontSize: "18px", marginTop: "4px" }}>
+                        {alertMessage}
                     </p>
                 )}
                 <p>정자세: {poseDurations.정자세.toFixed(1)}초</p>
