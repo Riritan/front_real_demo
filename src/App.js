@@ -50,15 +50,14 @@ const UserPose = () => {
     const updatePoseTime = (pose) => {
         const now = Date.now();
         const elapsedTime = (now - poseStartTimeRef.current) / 1000;
-
-        if (currentPoseRef.current) {
-            poseDurationRef.current[currentPoseRef.current] += elapsedTime;
-        }
-
+    
+        poseDurationRef.current[pose] += elapsedTime;
+    
         poseStartTimeRef.current = now;
         currentPoseRef.current = pose;
         setPoseDurations({ ...poseDurationRef.current });
     };
+    
 
     const poseDetect = (landmarks) => {
         const LEFT_SHOULDER = landmarks[POSE_LANDMARKS.LEFT_SHOULDER];
@@ -77,13 +76,18 @@ const UserPose = () => {
         const headPosition = nose.y - shoulderCenter.y;
     
         let status = "";
-        if (shoulderSlope < 0.05 && -0.05 < headPosition && headPosition < 0.1) {
-            status = "정자세";
-        } else if (shoulderSlope >= 0.05) {
-            status = "기울어짐";
+        if (shoulderSlope < 0.05) {
+            if (headPosition < -0.15) {  // 머리가 어깨보다 확 내려가 있으면 엎드림
+                status = "엎드림";
+            } else if (headPosition >= -0.15 && headPosition <= 0.1) {
+                status = "정자세";
+            } else {
+                status = "기울어짐"; // 이상치 방어
+            }
         } else {
-            status = "엎드림";
+            status = "기울어짐";
         }
+        
     
         const now = Date.now();
         const elapsed = (now - poseStartTimeRef.current) / 1000;
