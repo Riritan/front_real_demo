@@ -13,7 +13,7 @@ const UserPose = () => {
         자리비움: 0,
     });
 
-    const [showAlert, setShowAlert] = useState(false); // ✅ 추가됨
+    const [showAlert, setShowAlert] = useState(false);
 
     const webcamRef = useRef(null);
     const canvasRef = useRef(null);
@@ -30,6 +30,8 @@ const UserPose = () => {
         자리비움: 0,
     });
 
+    const continuousTiltedTimeRef = useRef(0); // ⭐ 연속 기울어진 시간 관리용
+
     const checkLeaveRef = useRef(false);
     const leaveTimeoutRef = useRef(null);
 
@@ -42,7 +44,7 @@ const UserPose = () => {
     });
 
     const endDetect = () => {
-        window.ReactNativeWebview.postMessage(JSON.parse(poseDurations));
+        window.ReactNativeWebView?.postMessage(JSON.parse(poseDurations));
     };
 
     const updatePoseTime = (pose) => {
@@ -56,62 +58,66 @@ const UserPose = () => {
         poseStartTimeRef.current = now;
         currentPoseRef.current = pose;
         setPoseDurations({ ...poseDurationRef.current });
-
-        // 수정: Web -> RN 메시지 전송 코드 추가
-        if (pose !== "정자세") {
-            const duration = poseDurationRef.current[pose];
-            if (duration >= 10) {
-                setShowAlert(true);
-        
-                // ✅ React Native 앱으로 메시지 전송
-                window.ReactNativeWebView?.postMessage(JSON.stringify({
-                    type: "BAD_POSTURE_WARNING",
-                    pose: pose,
-                    duration: duration,
-                    message: "10초 이상 올바르지 않은 자세입니다! 바른 자세로 돌아가세요!"
-                }));
-            } else {
-                setShowAlert(false);
-            }
-        } else {
-            setShowAlert(false);
-        }
-        
-        
     };
 
     const poseDetect = (landmarks) => {
         const LEFT_SHOULDER = landmarks[POSE_LANDMARKS.LEFT_SHOULDER];
         const RIGHT_SHOULDER = landmarks[POSE_LANDMARKS.RIGHT_SHOULDER];
         const NOSE = landmarks[POSE_LANDMARKS.NOSE];
-
+    
         const leftShoulder = { x: LEFT_SHOULDER.x, y: LEFT_SHOULDER.y };
         const rightShoulder = { x: RIGHT_SHOULDER.x, y: RIGHT_SHOULDER.y };
         const nose = { x: NOSE.x, y: NOSE.y };
-
+    
         const shoulderSlope = Math.abs(leftShoulder.y - rightShoulder.y);
         const shoulderCenter = {
             x: (leftShoulder.x + rightShoulder.x) / 2,
             y: (leftShoulder.y + rightShoulder.y) / 2,
         };
         const headPosition = nose.y - shoulderCenter.y;
-
+    
         let status = "";
-        if (shoulderSlope < 0.05 && -0.05 < headPosition < 0.1) {
+        if (shoulderSlope < 0.05 && -0.05 < headPosition && headPosition < 0.1) {
             status = "정자세";
         } else if (shoulderSlope >= 0.05) {
             status = "기울어짐";
         } else {
             status = "엎드림";
         }
-
+    
+        const now = Date.now();
+        const elapsed = (now - poseStartTimeRef.current) / 1000;
+    
+        // ⭐ 수정된 부분
+        if (status === "기울어짐" || status === "엎드림") {
+            continuousTiltedTimeRef.current += elapsed;
+        } else {
+            continuousTiltedTimeRef.current = 0; // 정자세 또는 자리비움이면 초기화
+        }
+    
+        poseStartTimeRef.current = now; // 마지막 자세 변경 시간 갱신
+    
+        if (continuousTiltedTimeRef.current >= 20) {
+            if (!showAlert) {
+                setShowAlert(true);
+                window.ReactNativeWebView?.postMessage(JSON.stringify({
+                    type: "BAD_POSTURE_WARNING",
+                    pose: status,
+                    duration: continuousTiltedTimeRef.current,
+                    message: "20초 이상 연속으로 잘못된 자세입니다! 바른 자세로 돌아가세요!"
+                }));
+            }
+        } else {
+            setShowAlert(false);
+        }
+    
         if (currentPoseRef.current !== status) {
             updatePoseTime(status);
         }
-
+    
         setPoseText(status);
         return { status };
-    };
+    };    
 
     function onResults(results) {
         try {
@@ -124,29 +130,14 @@ const UserPose = () => {
             canvasElement.height = webcamRef.current.video.videoHeight;
 
             canvasCtx.save();
-            canvasCtx.clearRect(
-                0,
-                0,
-                canvasElement.width,
-                canvasElement.height
-            );
-            canvasCtx.drawImage(
-                results.image,
-                0,
-                0,
-                canvasElement.width,
-                canvasElement.height
-            );
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
             drawConnectors(
                 canvasCtx,
                 results.poseLandmarks,
                 [
-                    [0, 1],
-                    [1, 2],
-                    [0, 4],
-                    [4, 5],
-                    [11, 12],
+                    [0, 1], [1, 2], [0, 4], [4, 5], [11, 12],
                 ],
                 { color: "#00FF00", lineWidth: 2 }
             );
@@ -185,8 +176,7 @@ const UserPose = () => {
 
     useEffect(() => {
         const pose = new Pose({
-            locateFile: (file) =>
-                `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
         });
 
         pose.setOptions({
@@ -236,7 +226,6 @@ const UserPose = () => {
                 }}
             >
                 <p>자세: {poseText}</p>
-                {/* ✅ 추가됨: 경고 메시지 */}
                 {showAlert && (
                     <p
                         style={{
@@ -245,8 +234,7 @@ const UserPose = () => {
                             marginTop: "4px",
                         }}
                     >
-                        ⚠️ 20초 이상 올바르지 않은 자세입니다! 바른 자세로
-                        돌아가세요!
+                        ⚠️ 20초 이상 연속으로 기울어진 자세입니다! 바른 자세로 돌아가세요!
                     </p>
                 )}
                 <p>정자세: {poseDurations.정자세.toFixed(1)}초</p>
