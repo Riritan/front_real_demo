@@ -105,39 +105,6 @@ const UserPose = () => {
             setShowModal(false);
         }
 
-        // ⭐ 20초 이상 나쁜 자세일 때 모달 띄우고 RN에 바로 전송
-        if (continuousBadPostureTimeRef.current >= 20) {
-            if (!showModal) {
-                let message = "";
-                if (status === "엎드림") {
-                    message =
-                        "20초 이상 연속으로 엎드린 자세입니다! 허리를 곧게 펴세요!";
-                } else if (status === "기울어짐") {
-                    message =
-                        "20초 이상 연속으로 기울어진 자세입니다! 바른 자세로 돌아가세요!";
-                }
-                setModalMessage(message);
-                setShowModal(true);
-
-                window.ReactNativeWebView?.postMessage(
-                    JSON.stringify({
-                        type: "BAD_POSTURE_WARNING",
-                        pose: status,
-                        duration: continuousBadPostureTimeRef.current,
-                        message: message,
-                    })
-                );
-            }
-        }
-
-        // 연속 나쁜자세 시간 관리
-        if (status === "기울어짐" || status === "엎드림") {
-            continuousBadPostureTimeRef.current += elapsed;
-        } else {
-            continuousBadPostureTimeRef.current = 0;
-            setShowModal(false);
-        }
-
         // ⭐ 15초 이상 나쁜 자세일 때 모달 띄우고 RN에 바로 전송
         if (continuousBadPostureTimeRef.current >= 15) {
             if (!showModal) {
@@ -192,23 +159,6 @@ const UserPose = () => {
                 canvasElement.height
             );
 
-            drawConnectors(
-                canvasCtx,
-                results.poseLandmarks,
-                [
-                    [0, 1],
-                    [1, 2],
-                    [0, 4],
-                    [4, 5],
-                    [11, 12],
-                ],
-                { color: "#00FF00", lineWidth: 2 }
-            );
-            drawLandmarks(canvasCtx, results.poseLandmarks, {
-                color: "red",
-                lineWidth: 2,
-                radius: 3,
-            });
             drawConnectors(
                 canvasCtx,
                 results.poseLandmarks,
@@ -293,49 +243,6 @@ const UserPose = () => {
 
     return (
         <div className="App">
-            {/* ✅ 모달 표시 */}
-            {showModal && (
-                <div
-                    style={{
-                        position: "fixed",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        backgroundColor: "rgba(0,0,0,0.5)",
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        zIndex: 9999,
-                    }}
-                >
-                    <div
-                        style={{
-                            backgroundColor: "white",
-                            padding: 20,
-                            borderRadius: 10,
-                            textAlign: "center",
-                        }}
-                    >
-                        <p
-                            style={{
-                                fontSize: 18,
-                                fontWeight: "bold",
-                                color: "red",
-                            }}
-                        >
-                            {modalMessage}
-                        </p>
-                        <button
-                            onClick={() => setShowModal(false)}
-                            style={{ marginTop: 10, fontSize: 16 }}
-                        >
-                            닫기
-                        </button>
-                    </div>
-                </div>
-            )}
-            {/* ✅ 자세 및 시간 표시 */}
             {/* ✅ 모달 표시 */}
             {showModal && (
                 <div
