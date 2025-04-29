@@ -13,13 +13,12 @@ const UserPose = () => {
         자리비움: 0,
     });
 
+    const [showModal, setShowModal] = useState(false);
+    const [modalMessage, setModalMessage] = useState("");
+
     const webcamRef = useRef(null);
     const canvasRef = useRef(null);
-    let camera = null;
 
-    const LEAVE_TIME_SEC = 5; // 자리 비움 설정 시간 (초)
-
-    const currentPoseRef = useRef("");
     const poseStartTimeRef = useRef(Date.now());
     const poseDurationRef = useRef({
         정자세: 0,
@@ -28,47 +27,39 @@ const UserPose = () => {
         자리비움: 0,
     });
 
+    const lastPostureRef = useRef("");
+    const lastUpdateTimeRef = useRef(Date.now());
+    const continuousBadPostureTimeRef = useRef(0);
+
     const checkLeaveRef = useRef(false);
     const leaveTimeoutRef = useRef(null);
 
-    // expo 프로젝트에서 측정 종료 신호 받는 이벤트 리스너
-    // ios
+    const LEAVE_TIME_SEC = 5;
+
     window.addEventListener("message", (e) => {
-        // 전달받은 데이터가 측정 종료일 경우 실행
-        if (e.data === "측정 종료") endDetect();
-    });
-    // android
-    document.addEventListener("message", (e) => {
-        // 전달받은 데이터가 측정 종료일 경우 실행
         if (e.data === "측정 종료") endDetect();
     });
 
-    // 측정 종료 시 호출되는 함수
-    // 이 프로젝트에서는 측정 종료를 할 수 없음 -> 그 기능이 없어
-    // 측정 종료 기능은 웹뷰띄우는 프로젝트에 있다
-    // 그럼 어떻게 하느냐
-    // expo 프로젝트에서 측정 종료 버튼 누르면 리액트 프로젝트(Pose)로 신호를 준다
-    // 리액트 프로젝트에선 신호를 받으면 밑에 함수를 실행하도록 한다
+    document.addEventListener("message", (e) => {
+        if (e.data === "측정 종료") endDetect();
+    });
+
     const endDetect = () => {
-        // 현재 시간 데이터를 담아놓은 변수(state)가 있다 -> poseDurations
-        // poseDurations <- 얘를 웹뷰한테 전해주면 됨
-        window.ReactNativeWebview.postMessage(JSON.parse(poseDurations));
+        window.ReactNativeWebView?.postMessage(
+            JSON.stringify(poseDurationRef.current)
+        );
     };
 
-    const updatePoseTime = (pose) => {
+    const updatePoseTime = (newPose) => {
         const now = Date.now();
-        const elapsedTime = (now - poseStartTimeRef.current) / 1000; // 초 단위
+        const elapsedTime = (now - lastUpdateTimeRef.current) / 1000;
 
-        // 기존 자세의 시간 누적
-        if (currentPoseRef.current) {
-            poseDurationRef.current[currentPoseRef.current] += elapsedTime;
+        if (lastPostureRef.current) {
+            poseDurationRef.current[lastPostureRef.current] += elapsedTime;
         }
 
-        // 새로운 자세 시작
-        poseStartTimeRef.current = now;
-        currentPoseRef.current = pose;
-
-        // 상태 업데이트
+        lastPostureRef.current = newPose;
+        lastUpdateTimeRef.current = now;
         setPoseDurations({ ...poseDurationRef.current });
     };
 
@@ -77,29 +68,66 @@ const UserPose = () => {
         const RIGHT_SHOULDER = landmarks[POSE_LANDMARKS.RIGHT_SHOULDER];
         const NOSE = landmarks[POSE_LANDMARKS.NOSE];
 
-        const leftShoulder = { x: LEFT_SHOULDER.x, y: LEFT_SHOULDER.y };
-        const rightShoulder = { x: RIGHT_SHOULDER.x, y: RIGHT_SHOULDER.y };
-        const nose = { x: NOSE.x, y: NOSE.y };
-
-        const shoulderSlope = Math.abs(leftShoulder.y - rightShoulder.y);
+        const shoulderSlope = Math.abs(LEFT_SHOULDER.y - RIGHT_SHOULDER.y);
         const shoulderCenter = {
-            x: (leftShoulder.x + rightShoulder.x) / 2,
-            y: (leftShoulder.y + rightShoulder.y) / 2,
+            x: (LEFT_SHOULDER.x + RIGHT_SHOULDER.x) / 2,
+            y: (LEFT_SHOULDER.y + RIGHT_SHOULDER.y) / 2,
         };
-        const headPosition = nose.y - shoulderCenter.y;
+        const headPosition = NOSE.y - shoulderCenter.y;
 
         let status = "";
-        if (shoulderSlope < 0.05 && -0.05 < headPosition < 0.1) {
-            status = "정자세";
+        if (
+            shoulderSlope < 0.05 &&
+            -0.05 < headPosition &&
+            headPosition < 0.1
+        ) {
+            status = "엎드림";
         } else if (shoulderSlope >= 0.05) {
             status = "기울어짐";
         } else {
-            status = "엎드림";
+            status = "정자세";
         }
 
-        // 자세가 변경된 경우, 시간 측정 업데이트
-        if (currentPoseRef.current !== status) {
+        const now = Date.now();
+        const elapsed = (now - poseStartTimeRef.current) / 1000;
+        poseStartTimeRef.current = now;
+
+        // 자세 변경시 누적시간 갱신
+        if (lastPostureRef.current !== status) {
             updatePoseTime(status);
+        }
+
+        // 연속 나쁜자세 시간 관리
+        if (status === "기울어짐" || status === "엎드림") {
+            continuousBadPostureTimeRef.current += elapsed;
+        } else {
+            continuousBadPostureTimeRef.current = 0;
+            setShowModal(false);
+        }
+
+        // ⭐ 15초 이상 나쁜 자세일 때 모달 띄우고 RN에 바로 전송
+        if (continuousBadPostureTimeRef.current >= 15) {
+            if (!showModal) {
+                let message = "";
+                if (status === "엎드림") {
+                    message =
+                        "15초 이상 연속으로 엎드린 자세입니다! 허리를 곧게 펴세요!";
+                } else if (status === "기울어짐") {
+                    message =
+                        "15초 이상 연속으로 기울어진 자세입니다! 바른 자세로 돌아가세요!";
+                }
+                setModalMessage(message);
+                setShowModal(true);
+
+                window.ReactNativeWebView?.postMessage(
+                    JSON.stringify({
+                        type: "BAD_POSTURE_WARNING",
+                        pose: status,
+                        duration: continuousBadPostureTimeRef.current,
+                        message: message,
+                    })
+                );
+            }
         }
 
         setPoseText(status);
@@ -141,12 +169,8 @@ const UserPose = () => {
                     [4, 5],
                     [11, 12],
                 ],
-                {
-                    color: "#00FF00",
-                    lineWidth: 2,
-                }
+                { color: "#00FF00", lineWidth: 2 }
             );
-
             drawLandmarks(canvasCtx, results.poseLandmarks, {
                 color: "red",
                 lineWidth: 2,
@@ -199,23 +223,16 @@ const UserPose = () => {
 
         const detectFrame = async () => {
             const video = webcamRef.current?.video;
-
-            if (
-                isActive &&
-                video &&
-                video.readyState >= 3 // HAVE_FUTURE_DATA
-            ) {
+            if (isActive && video && video.readyState >= 3) {
                 try {
                     await pose.send({ image: video });
                 } catch (e) {
                     console.error("🔥 pose.send 실패:", e);
                 }
             }
-
             if (isActive) requestAnimationFrame(detectFrame);
         };
 
-        // ✅ 최초 1회 호출
         requestAnimationFrame(detectFrame);
 
         return () => {
@@ -226,6 +243,49 @@ const UserPose = () => {
 
     return (
         <div className="App">
+            {/* ✅ 모달 표시 */}
+            {showModal && (
+                <div
+                    style={{
+                        position: "fixed",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        backgroundColor: "rgba(0,0,0,0.5)",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        zIndex: 9999,
+                    }}
+                >
+                    <div
+                        style={{
+                            backgroundColor: "white",
+                            padding: 20,
+                            borderRadius: 10,
+                            textAlign: "center",
+                        }}
+                    >
+                        <p
+                            style={{
+                                fontSize: 18,
+                                fontWeight: "bold",
+                                color: "red",
+                            }}
+                        >
+                            {modalMessage}
+                        </p>
+                        <button
+                            onClick={() => setShowModal(false)}
+                            style={{ marginTop: 10, fontSize: 16 }}
+                        >
+                            닫기
+                        </button>
+                    </div>
+                </div>
+            )}
+            {/* ✅ 자세 및 시간 표시 */}
             <div
                 style={{
                     position: "absolute",
@@ -266,7 +326,7 @@ const UserPose = () => {
                     width: "100%",
                     height: "100%",
                 }}
-            ></canvas>
+            />
         </div>
     );
 };
