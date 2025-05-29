@@ -49,8 +49,8 @@ const UserPose = () => {
             JSON.stringify(poseDurationRef.current)
         );
     };
-
-    const updatePoseTime = (newPose) => {
+    ç;
+    const updatePoseTime = (newPose, shoulderSlope, headPosition) => {
         const now = Date.now();
         const elapsedTime = (now - lastUpdateTimeRef.current) / 1000;
 
@@ -64,6 +64,8 @@ const UserPose = () => {
 
         // ✅ 정자세 또는 기울어짐일 때만 전송
         if (newPose === "정자세" || newPose === "기울어짐") {
+            console.log("[DEBUG] 자세 바뀜:", newPose, poseDurationRef.current);
+            console.log("어깨각도:", shoulderSlope, "머리위치:", headPosition);
             window.ReactNativeWebView?.postMessage(
                 JSON.stringify({
                     type: "POSTURE_CHANGE",
@@ -106,7 +108,7 @@ const UserPose = () => {
 
         // 자세 변경시 누적시간 갱신
         if (lastPostureRef.current !== status) {
-            updatePoseTime(status);
+            updatePoseTime(status, shoulderSlope, headPosition);
         }
 
         // 연속 나쁜자세 시간 관리
