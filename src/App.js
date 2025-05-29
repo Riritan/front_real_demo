@@ -61,6 +61,18 @@ const UserPose = () => {
         lastPostureRef.current = newPose;
         lastUpdateTimeRef.current = now;
         setPoseDurations({ ...poseDurationRef.current });
+
+        // ✅ 정자세 또는 기울어짐일 때만 전송
+        if (newPose === "정자세" || newPose === "기울어짐") {
+            window.ReactNativeWebView?.postMessage(
+                JSON.stringify({
+                    type: "POSTURE_CHANGE",
+                    pose: newPose,
+                    timestamp: now,
+                    durations: poseDurationRef.current,
+                })
+            );
+        }
     };
 
     const poseDetect = (landmarks) => {
